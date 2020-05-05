@@ -95,10 +95,6 @@ class MainScreen(Screen):
         try:
             self.dump_csv_core()
         except Exception as e:
-            print("A")
-            import traceback
-            print(traceback.format_exc())
-            print("B")
             err_msg = "{}の出力に失敗しました。".format(out_file_name)
             self.disp_messg_err(err_msg)
             log.exception(err_msg, e)
@@ -152,10 +148,6 @@ class MainScreen(Screen):
             self.disp_messg("{}を読み込みました。\n続いてテキストファイルをドラッグ&ドロップしてください".format(
                 os.path.basename(file_path)))
         except Exception as e:
-            print("A")
-            import traceback
-            print(traceback.format_exc())
-            print("B")
             file_name = os.path.basename(file_path)
             err_msg = "{}の読込処理に失敗しました。\nエラー発生行番号={}。".format(
                 file_name, excel_proc_line_num)
@@ -172,10 +164,6 @@ class MainScreen(Screen):
             self.disp_messg("{}を読み込みました。\n続いてExcelファイルをドラッグ&ドロップしてください".format(
                 os.path.basename(file_path)))
         except Exception as e:
-            print("A")
-            import traceback
-            print(traceback.format_exc())
-            print("B")
             file_name = os.path.basename(file_path)
             err_msg = "{}の読込処理に失敗しました。\nエラー発生行番号={}。".format(
                 file_name, text_proc_line_num)
@@ -188,10 +176,6 @@ class MainScreen(Screen):
         try:
             self.dump_out_file_core(file_path)
         except Exception as e:
-            print("A")
-            import traceback
-            print(traceback.format_exc())
-            print("B")
             self.disp_messg_err("{}の出力に失敗しました。".format(OUT_FILE_NAME))
             log.exception("{}の出力に失敗しました。%s".format(OUT_FILE_NAME), e)
 
@@ -287,6 +271,7 @@ def parse_text_file_core(file_path):
                 orderInfo.itemName = item_name
                 orderInfo.itemColor = item_color
                 orderInfo.itemSize = item_size
+                orderInfo.mailAddress = mail_address
                 order_list.append(orderInfo)
                 ORDER_ITEM_LIST_DICT[mail_address] = order_list
                 ORDER_NUM_DICT[order_num] = True
