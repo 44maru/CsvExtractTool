@@ -1,3 +1,9 @@
+from kivy.uix.screenmanager import Screen
+from kivy.resources import resource_add_path
+from kivy.core.window import Window
+from kivy.core.text import LabelBase, DEFAULT_FONT
+from kivy.config import Config
+from kivy.app import App
 import logging.config
 import os
 import sys
@@ -6,8 +12,6 @@ from xlrd import open_workbook
 LOG_CONF = "./logging.conf"
 logging.config.fileConfig(LOG_CONF)
 
-from kivy.app import App
-from kivy.config import Config
 
 Config.set('modules', 'inspector', '')  # Inspectorを有効にする
 Config.set('graphics', 'width', 480)
@@ -15,31 +19,15 @@ Config.set('graphics', 'height', 280)
 Config.set('graphics', 'maxfps', 20)  # フレームレートを最大で20にする
 Config.set('graphics', 'resizable', 0)  # Windowの大きさを変えられなくする
 Config.set('input', 'mouse', 'mouse,disable_multitouch')
-from kivy.core.text import LabelBase, DEFAULT_FONT
-from kivy.core.window import Window
-from kivy.resources import resource_add_path
-from kivy.uix.screenmanager import Screen
 
 if hasattr(sys, "_MEIPASS"):
     resource_add_path(sys._MEIPASS)
 
 EMPTY = ""
 INDEX_TWITTER = 16
+INDEX_ACCEPTED_DATE = 18
+INDEX_DISCORD_ID = 20
 INDEX_EMAIL = 8
-INDEX_FIRST_NAME = 3
-INDEX_LAST_NAME = 2
-INDEX_ADDRESS = 7
-INDEX_POST_CODE = 4
-INDEX_CITY = 6
-INDEX_REGION = 5
-INDEX_PHONE = 8
-INDEX_PAY_TYPE = 13
-INDEX_CARD_NUMBER = 14
-INDEX_CARD_LIMIT_MONTH = 15
-INDEX_CARD_LIMIT_YEAR = 16
-INDEX_CARD_CVV = 17
-INDEX_ITEM_NO = 4
-INDEX_ITEM_SIZE = 2
 
 ID_MESSAGE = "message"
 
@@ -55,6 +43,8 @@ EXT_XLSM = ".xlsm"
 KEY_ORDER_NUMBER = "注文オーダー番号"
 KEY_MAIL_ADDRESS = "購入者メールアドレス"
 KEY_ITEM_NAME = "商品名"
+KEY_ITEM_COLOR = "カラー"
+KEY_ITEM_SIZE = "商品サイズ"
 
 CONFIG_TXT = "./config.txt"
 CONFIG_DICT = {}
@@ -63,12 +53,25 @@ CONFIG_KEY_OUTPUT_CSV_CHAR_SET = "OUTPUT_CSV_CHAR_SET"
 CONFIG_KEY_INPUT_TEXT_CHAR_SET = "INPUT_TEXT_CHAR_SET"
 ORDER_ITEM_LIST_DICT = {}
 ORDER_NUM_DICT = {}
-TWITTER_DICT = {}
+EXCEL_INFO_DICT = {}
 
 excel_proc_line_num = 0
 text_proc_line_num = 0
 already_read_text = False
 already_read_excel = False
+
+
+class OrderInfo():
+    def __init__(self):
+        self.itemName = ""
+        self.itemColor = ""
+        self.itemSize = ""
+        self.mailAddress = ""
+        self.acceptedDate = ""
+        self.discordId = ""
+
+    def __lt__(self, other):
+        return self.itemName < other.itemName
 
 
 class MainScreen(Screen):
@@ -92,38 +95,53 @@ class MainScreen(Screen):
         try:
             self.dump_csv_core()
         except Exception as e:
+            print("A")
+            import traceback
+            print(traceback.format_exc())
+            print("B")
             err_msg = "{}の出力に失敗しました。".format(out_file_name)
             self.disp_messg_err(err_msg)
             log.exception(err_msg, e)
 
     def dump_csv_core(self):
         out_file_name = CONFIG_DICT[CONFIG_KEY_OUTPUT_CSV_NAME]
-        twitter_item_dict = self.mk_twitter_item_dict()
-        self.dump_twitter_and_item_list(out_file_name, twitter_item_dict)
+        discordIdOrderInfoDict = self.mkDiscordIdOrderInfoDict()
+        self.dump_twitter_and_item_list(out_file_name, discordIdOrderInfoDict)
         self.disp_messg("{}を出力しました".format(out_file_name))
 
     @staticmethod
-    def dump_twitter_and_item_list(out_file_name, twitter_item_dict):
+    def dump_twitter_and_item_list(out_file_name, discordIdOrderInfoDict):
         with open(out_file_name, "w", encoding=CONFIG_DICT[CONFIG_KEY_OUTPUT_CSV_CHAR_SET]) as f:
-            for item in sorted(twitter_item_dict.items()):
+            for item in sorted(discordIdOrderInfoDict.items()):
                 f.write("{}".format(item[0]))
-                for item_name in sorted(item[1]):
-                    f.write(",{}\n".format(item_name))
+                for orderInfo in sorted(item[1]):
+                    f.write(",{},{},{},{},{}\n".format(
+                            orderInfo.itemName,
+                            orderInfo.itemColor,
+                            orderInfo.itemSize,
+                            orderInfo.mailAddress,
+                            orderInfo.acceptedDate)
+                            )
 
     @staticmethod
-    def mk_twitter_item_dict():
-        twitter_item_dict = {}
+    def mkDiscordIdOrderInfoDict():
+        discordIdOrderInfoDict = {}
         for item in ORDER_ITEM_LIST_DICT.items():
             mail = item[0]
             order_item_list = item[1]
-            twitter = TWITTER_DICT.get(mail)
-            if twitter is None:
+            orderInfoFromExcel = EXCEL_INFO_DICT.get(mail)
+            if orderInfoFromExcel is None:
                 log.warn("アドレス {} はExcelファイルに存在しません。処理をスキップします。".format(mail))
             else:
-                list = twitter_item_dict.get(twitter, [])
-                list.extend(order_item_list)
-                twitter_item_dict[twitter] = list
-        return twitter_item_dict
+                orderInfoList = discordIdOrderInfoDict.get(
+                    orderInfoFromExcel.discordId, [])
+                for orderInfoFromTxt in order_item_list:
+                    orderInfoFromTxt.acceptedDate = orderInfoFromExcel.acceptedDate
+                    orderInfoFromTxt.discordId = orderInfoFromExcel.discordId
+                    orderInfoList.append(orderInfoFromTxt)
+                discordIdOrderInfoDict[orderInfoFromExcel.discordId] = orderInfoList
+
+        return discordIdOrderInfoDict
 
     def parse_excel_file(self, file_path):
         global excel_proc_line_num
@@ -134,8 +152,13 @@ class MainScreen(Screen):
             self.disp_messg("{}を読み込みました。\n続いてテキストファイルをドラッグ&ドロップしてください".format(
                 os.path.basename(file_path)))
         except Exception as e:
+            print("A")
+            import traceback
+            print(traceback.format_exc())
+            print("B")
             file_name = os.path.basename(file_path)
-            err_msg = "{}の読込処理に失敗しました。\nエラー発生行番号={}。".format(file_name, excel_proc_line_num)
+            err_msg = "{}の読込処理に失敗しました。\nエラー発生行番号={}。".format(
+                file_name, excel_proc_line_num)
             self.disp_messg_err(err_msg)
             log.exception(err_msg, e)
             already_read_excel = False
@@ -149,8 +172,13 @@ class MainScreen(Screen):
             self.disp_messg("{}を読み込みました。\n続いてExcelファイルをドラッグ&ドロップしてください".format(
                 os.path.basename(file_path)))
         except Exception as e:
+            print("A")
+            import traceback
+            print(traceback.format_exc())
+            print("B")
             file_name = os.path.basename(file_path)
-            err_msg = "{}の読込処理に失敗しました。\nエラー発生行番号={}。".format(file_name, text_proc_line_num)
+            err_msg = "{}の読込処理に失敗しました。\nエラー発生行番号={}。".format(
+                file_name, text_proc_line_num)
             self.disp_messg_err(err_msg)
             log.exception(err_msg, e)
             already_read_text = False
@@ -160,6 +188,10 @@ class MainScreen(Screen):
         try:
             self.dump_out_file_core(file_path)
         except Exception as e:
+            print("A")
+            import traceback
+            print(traceback.format_exc())
+            print("B")
             self.disp_messg_err("{}の出力に失敗しました。".format(OUT_FILE_NAME))
             log.exception("{}の出力に失敗しました。%s".format(OUT_FILE_NAME), e)
 
@@ -199,10 +231,10 @@ def load_config():
 
 
 def parse_excel_file_core(file_path):
-    global TWITTER_DICT
+    global EXCEL_INFO_DICT
     global excel_proc_line_num
 
-    TWITTER_DICT = {}
+    EXCEL_INFO_DICT = {}
     excel_proc_line_num = 1
 
     workbook = open_workbook(file_path)
@@ -210,9 +242,11 @@ def parse_excel_file_core(file_path):
     for i in range(1, sheet.nrows):
         row = sheet.row(i)
         mail = row[INDEX_EMAIL].value
-        twitter = row[INDEX_TWITTER].value
-        if not (mail in TWITTER_DICT):
-            TWITTER_DICT[mail] = twitter
+        if not (mail in EXCEL_INFO_DICT):
+            orderInfo = OrderInfo()
+            orderInfo.acceptedDate = row[INDEX_ACCEPTED_DATE].value
+            orderInfo.discordId = row[INDEX_DISCORD_ID].value
+            EXCEL_INFO_DICT[mail] = orderInfo
 
         excel_proc_line_num += 1
 
@@ -227,6 +261,8 @@ def parse_text_file_core(file_path):
     is_item_line = False
     is_mail_line = False
     is_order_num_line = False
+    is_item_color_line = False
+    is_item_size_line = False
 
     for line in open(file_path, "r", encoding=CONFIG_DICT[CONFIG_KEY_INPUT_TEXT_CHAR_SET]):
         line = line[:-1]
@@ -237,35 +273,68 @@ def parse_text_file_core(file_path):
         elif is_mail_line:
             mail_address = line
 
+        elif is_item_size_line:
+            item_size = line
+
+        elif is_item_color_line:
+            item_color = line
+
         elif is_order_num_line:
             order_num = line
             if not (order_num in ORDER_NUM_DICT):
                 order_list = ORDER_ITEM_LIST_DICT.get(mail_address, [])
-                order_list.append(item_name)
+                orderInfo = OrderInfo()
+                orderInfo.itemName = item_name
+                orderInfo.itemColor = item_color
+                orderInfo.itemSize = item_size
+                order_list.append(orderInfo)
                 ORDER_ITEM_LIST_DICT[mail_address] = order_list
                 ORDER_NUM_DICT[order_num] = True
             else:
-                log.warn("注文オーダー番号 {} はすでに読込済みのため、読込をスキップします。行番号={}".format(order_num, text_proc_line_num))
+                log.warn("注文オーダー番号 {} はすでに読込済みのため、読込をスキップします。行番号={}".format(
+                    order_num, text_proc_line_num))
 
         if line == KEY_ITEM_NAME:
             is_item_line = True
             is_mail_line = False
             is_order_num_line = False
+            is_item_color_line = False
+            is_item_size_line = False
 
         elif line == KEY_MAIL_ADDRESS:
             is_item_line = False
             is_mail_line = True
             is_order_num_line = False
+            is_item_color_line = False
+            is_item_size_line = False
 
         elif line == KEY_ORDER_NUMBER:
             is_item_line = False
             is_mail_line = False
             is_order_num_line = True
+            is_item_color_line = False
+            is_item_size_line = False
+
+        elif line == KEY_ITEM_COLOR:
+            is_item_line = False
+            is_mail_line = False
+            is_order_num_line = False
+            is_item_color_line = True
+            is_item_size_line = False
+
+        elif line == KEY_ITEM_SIZE:
+            is_item_line = False
+            is_mail_line = False
+            is_order_num_line = False
+            is_item_color_line = False
+            is_item_size_line = True
 
         else:
             is_item_line = False
             is_mail_line = False
             is_order_num_line = False
+            is_item_color_line = False
+            is_item_size_line = False
 
         text_proc_line_num += 1
 

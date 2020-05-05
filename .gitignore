@@ -1,3 +1,5 @@
-venv
+.venv
 *.log
 testdata
+dist
+build
